@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#1f3b33" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f2f4f0" media="(prefers-color-scheme: light)" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Jornada</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon-192.png" type="image/png" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+  </head>
+  <body>
+    <header class="topbar">
+      <span class="brand">Jornada</span>
+      <div id="status" class="status" aria-live="polite"></div>
+    </header>
+    <nav id="nav" class="nav" aria-label="Secciones"></nav>
+    <main id="main"></main>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+    <noscript>Esta aplicación necesita JavaScript.</noscript>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
