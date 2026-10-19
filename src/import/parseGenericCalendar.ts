@@ -148,6 +148,52 @@ function findDates(line: string, period: string | null): Found | null {
   return null;
 }
 
+const WEEKDAY_RE = "(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)";
+const WEEKDAYS: Record<string, number> = { lunes: 1, martes: 2, miercoles: 3, jueves: 4, viernes: 5, sabado: 6, domingo: 7 };
+
+/**
+ * Tablas con el mes y el año en la primera columna, como las de muchos
+ * calendarios escolares o laborales:
+ *   "Octubre 2026  Viernes 30  Día no lectivo"
+ *   "Diciembre 2026  Lunes 7 y martes 8  Fiestas laborales"
+ *   "Diciembre 2026  Del miércoles 23 al jueves 31  Vacaciones escolares"
+ * Si se indica el día de la semana, se comprueba que coincide con la fecha.
+ */
+function monthYearRow(line: string): { found: Found[]; mismatch: string | null } | null {
+  const head = new RegExp(`^${MONTH_RE}\\s+(?:de\\s+)?(\\d{4})\\s+(.+)$`, "i").exec(line);
+  if (!head) return null;
+  const month = MONTHS[head[1]!.toLowerCase()]!;
+  const year = Number(head[2]);
+  const rest = head[3]!;
+  const wd = (w: string | undefined, d: CivilDate): string | null => {
+    if (!w) return null;
+    const want = WEEKDAYS[norm(w)];
+    const got = new Date(`${d}T12:00:00Z`).getUTCDay() || 7;
+    return want && want !== got ? `${w} ${Number(d.slice(8))} de ${head[1]} de ${year}` : null;
+  };
+
+  const range = new RegExp(`^(?:del?\\s+)?(?:(${WEEKDAY_RE})\\s+)?(\\d{1,2})\\s+(?:al?|hasta(?:\\s+el)?)\\s+(?:(${WEEKDAY_RE})\\s+)?(\\d{1,2})\\s+(.+)$`, "i").exec(rest);
+  if (range) {
+    const from = iso(year, month, Number(range[2]));
+    const to = iso(year, month, Number(range[4]));
+    if (from && to && from <= to) {
+      return { found: [{ from, to, rest: range[5]!, missingYear: false }], mismatch: wd(range[1], from) ?? wd(range[3], to) };
+    }
+    return null;
+  }
+  const list = new RegExp(`^((?:(?:${WEEKDAY_RE})\\s+)?\\d{1,2}(?:\\s*(?:,|y|e)\\s*(?:(?:${WEEKDAY_RE})\\s+)?\\d{1,2})*)\\s+(.+)$`, "i").exec(rest);
+  if (!list) return null;
+  const found: Found[] = [];
+  let mismatch: string | null = null;
+  for (const m of list[1]!.matchAll(new RegExp(`(?:(${WEEKDAY_RE})\\s+)?(\\d{1,2})`, "gi"))) {
+    const d = iso(year, month, Number(m[2]));
+    if (!d) return null;
+    mismatch ??= wd(m[1], d);
+    found.push({ from: d, rest: list[2]!, missingYear: false });
+  }
+  return { found, mismatch };
+}
+
 function cleanName(rest: string): { name: string; isTransfer: boolean } {
   const isTransfer = /traslad/i.test(rest);
   const name = rest
@@ -170,6 +216,20 @@ export function parseGenericCalendar(text: string, opts: GenericParseOptions = {
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line === "\f") continue;
+    const row = monthYearRow(line);
+    if (row) {
+      if (row.mismatch) warnings.push(`El día de la semana no coincide con la fecha en «${line}» (${row.mismatch}). Revísalo.`);
+      for (const f of row.found) {
+        const { name, isTransfer } = cleanName(f.rest);
+        if (!name) continue;
+        const category = guessCategory(name, !!f.to) ?? headingCategory ?? (f.to ? "periodo_vacacional" : "otro");
+        const key = `${f.from}|${f.to ?? ""}|${norm(name)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        items.push({ from: f.from, to: f.to, category, name, isTransfer, sourceLine: line });
+      }
+      continue;
+    }
     const found = findDates(line, period);
     if (!found) {
       // Renglón sin fecha: puede ser un encabezado que da la categoría.

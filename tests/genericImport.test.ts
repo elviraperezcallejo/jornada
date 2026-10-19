@@ -63,6 +63,40 @@ Del 24 al 31 de diciembre de 2027: Cierre de Navidad`);
     ]);
   });
 
+  it("lee tablas «Mes Año · días · motivo» (también separadas por tabuladores)", () => {
+    const table = `Mes\tFechas\tMotivo
+Octubre 2026\tViernes 30\tDía no lectivo
+Noviembre 2026\tLunes 2\tFiesta laboral
+Diciembre 2026\tLunes 7 y martes 8\tFiestas laborales
+Diciembre 2026\tDel miércoles 23 al jueves 31\tVacaciones escolares
+Enero 2027\tDel viernes 1 al domingo 10\tVacaciones escolares
+Febrero 2027\tLunes 8 y martes 9\tDías no lectivos
+Marzo 2027\tDel sábado 20 al martes 30\tVacaciones escolares
+Abril 2027\tViernes 23\tFiesta laboral
+Mayo 2027\tSábado 1\tFiesta laboral`;
+    const r = parseGenericCalendar(table);
+    expect(r.warnings).toEqual([]); // todos los días de la semana coinciden con las fechas
+    expect(rows(r.items)).toEqual([
+      ["2026-10-30", null, "uva_no_lectivo", "Día no lectivo"],
+      ["2026-11-02", null, "nacional_regional", "Fiesta laboral"],
+      ["2026-12-07", null, "nacional_regional", "Fiestas laborales"],
+      ["2026-12-08", null, "nacional_regional", "Fiestas laborales"],
+      ["2026-12-23", "2026-12-31", "periodo_vacacional", "Vacaciones escolares"],
+      ["2027-01-01", "2027-01-10", "periodo_vacacional", "Vacaciones escolares"],
+      ["2027-02-08", null, "uva_no_lectivo", "Días no lectivos"],
+      ["2027-02-09", null, "uva_no_lectivo", "Días no lectivos"],
+      ["2027-03-20", "2027-03-30", "periodo_vacacional", "Vacaciones escolares"],
+      ["2027-04-23", null, "nacional_regional", "Fiesta laboral"],
+      ["2027-05-01", null, "nacional_regional", "Fiesta laboral"],
+    ]);
+  });
+
+  it("avisa si el día de la semana no coincide con la fecha", () => {
+    const r = parseGenericCalendar("Octubre 2026 Lunes 30 Día no lectivo");
+    expect(r.items).toHaveLength(1);
+    expect(r.warnings.join()).toMatch(/no coincide/);
+  });
+
   it("sin año en el texto ni indicado, avisa en vez de inventarlo", () => {
     const r = parseGenericCalendar("12 de octubre: Fiesta Nacional");
     expect(r.items).toEqual([]);
