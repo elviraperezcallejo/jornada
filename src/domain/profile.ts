@@ -51,3 +51,10 @@ Fiestas locales:
 Cierres de la empresa:
 Puente: 7 de diciembre
 Navidad: del 24 de diciembre al 31 de diciembre`;
+
+/** Segunda plantilla: tabla con mes y año, días y motivo (formato habitual en calendarios escolares). */
+export const TABLE_TEMPLATE = `Mes Fechas Motivo
+Octubre 2026 Lunes 12 Fiesta Nacional
+Diciembre 2026 Lunes 7 y martes 8 Fiestas laborales
+Diciembre 2026 Del jueves 24 al jueves 31 Cierre de Navidad
+Mayo 2027 Sábado 15 Fiesta local`;

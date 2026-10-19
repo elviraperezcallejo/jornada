@@ -351,6 +351,8 @@ export function leaveUsage(category: LeaveCategory, periodKey: string, ctx: Calc
     if (!info.consumesLeave || info.leave?.category !== category) continue;
     (date <= today ? usedDates : plannedDates).push(date);
   }
+  const start = trackingStart(ctx);
+  const relevant = coursesCovering(startsOn, endsOn).filter((c) => courseBounds(c).endsOn >= start);
   const prior = ctx.config.priorLeaveUsage
     .filter((p) => p.category === category && p.periodKey === periodKey)
     .reduce((a, p) => a + p.days, 0);
@@ -359,8 +361,9 @@ export function leaveUsage(category: LeaveCategory, periodKey: string, ctx: Calc
     used: usedDates.length,
     planned: plannedDates.length,
     remaining: allowance - prior - usedDates.length - plannedDates.length,
-    missingCourses: coursesCovering(startsOn, endsOn).filter((c) => !calendars[c]),
-    estimatedCourses: coursesCovering(startsOn, endsOn).filter((c) => !!calendars[c]?.estimatedFrom),
+    // Solo cuentan los cursos desde que se empezó a registrar.
+    missingCourses: relevant.filter((c) => !calendars[c]),
+    estimatedCourses: relevant.filter((c) => !!calendars[c]?.estimatedFrom),
   };
 }
 
@@ -421,4 +424,48 @@ export function formatRatio(r: number | null): string {
   const v = Math.round(r * 1000) / 10;
   const s = Math.abs(v).toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   return `${v > 0 ? "+" : v < 0 ? "−" : ""}${s} %`;
+}
+
+// ---------------------------------------------------------------------------
+// Días de compensación: cuántos ha generado el saldo de horas
+// ---------------------------------------------------------------------------
+
+export interface CompensationSummary {
+  /** Periodo del saldo: curso ("2026-27") o año natural ("2027"). */
+  periodKey: string;
+  /** Saldo hasta hoy del periodo, más lo traído del curso anterior si lo hay. */
+  balanceHours: number;
+  carriedIn: number;
+  /** Horas de una jornada según el contrato vigente hoy (37,5 ÷ 5 = 7,5). */
+  dailyHours: number;
+  /** Días de compensación ya disfrutados (ya descontados del saldo). */
+  takenDates: CivilDate[];
+  /** Días de compensación futuros (aún no descontados del saldo). */
+  plannedDates: CivilDate[];
+  /** Saldo que queda tras descontar los días planificados. */
+  availableHours: number;
+  /** availableHours ÷ dailyHours (puede ser negativo si hay déficit). */
+  availableDays: number;
+}
+
+/**
+ * Un día de compensación es un día laborable en el que no se trabaja: su
+ * referencia sigue contando, así que gasta una jornada de saldo. Los ya
+ * pasados están dentro del saldo; los futuros se restan aparte.
+ */
+export function compensationSummary(periodKey: string, ctx: CalcContext, carryover: CarryoverFile | null): CompensationSummary {
+  const today = madridDateOf(ctx.now);
+  const s = annualSummary(periodKey, ctx);
+  const carriedIn = carryover && carryover.course === periodKey ? carryover.hours : 0;
+  const term = termFor(today, ctx.config);
+  const dailyHours = term ? term.weeklyHours / term.workdays.length : 0;
+  const comp = s.days.filter((d) => d.info.compensation && d.info.isWorkday);
+  const takenDates = comp.filter((d) => d.date <= today).map((d) => d.date);
+  const plannedDates = comp.filter((d) => d.date > today).map((d) => d.date);
+  const balanceHours = s.diffHours + carriedIn;
+  const availableHours = balanceHours - plannedDates.length * dailyHours;
+  return {
+    periodKey, balanceHours, carriedIn, dailyHours, takenDates, plannedDates, availableHours,
+    availableDays: dailyHours > 0 ? availableHours / dailyHours : 0,
+  };
 }

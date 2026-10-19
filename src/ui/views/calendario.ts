@@ -11,15 +11,15 @@ import {
   planEditEntry,
   type CalendarPlan,
 } from "../../domain/calendar";
-import { effectiveCalendars, weekChanges } from "../../domain/compute";
-import { courseOf, nowUtc } from "../../domain/time";
+import { compensationSummary, effectiveCalendars, leaveUsage, weekChanges } from "../../domain/compute";
+import { annualKeyOf, courseOf, nowUtc } from "../../domain/time";
 import { CATEGORIES, TIMEZONE, type CalendarEntry, type Category, type CourseLabel, type LeaveCategory } from "../../domain/types";
 import { buildDraft } from "../../import/importFlow";
 import { loadPdfjs } from "../../import/loadPdfjs";
 import { pdfToText } from "../../import/pdfText";
 import type { ImportDraft } from "../../storage/calendarStore";
 import type { App } from "../app";
-import { categoryLabel, GENERIC_TEMPLATE, periodLabel, profileOf } from "../../domain/profile";
+import { categoryLabel, GENERIC_TEMPLATE, periodLabel, profileOf, TABLE_TEMPLATE } from "../../domain/profile";
 import { groupByCourse } from "../../import/importFlow";
 import { confirmDanger, dialog, h, toast } from "../dom";
 import { dateLong, dateShort, formatHours, monthName, plural, weekLabel } from "../format";
@@ -72,9 +72,10 @@ export function calendarioView(app: App): HTMLElement {
 
   return h("section", { class: "view", "aria-labelledby": "t-cal" },
     h("h1", { id: "t-cal" }, "Calendario"),
+    daysPanel(app, ym.slice(0, 4)),
     h("div", { class: "actions" },
       h("button", { type: "button", class: "btn btn-primary", onclick: () => importDialog(app) }, "Importar calendario"),
-      h("button", { type: "button", class: "btn", onclick: () => leaveDialog(app) }, "Planificar vacaciones o permisos"),
+      h("button", { type: "button", class: "btn", onclick: () => leaveDialog(app) }, "Planificar vacaciones, permisos o compensación"),
     ),
     h("div", { class: "pager" },
       h("button", { type: "button", class: "btn", onclick: () => go(-1), "aria-label": "Mes anterior" }, "‹"),
@@ -92,6 +93,49 @@ export function calendarioView(app: App): HTMLElement {
       h("li", { class: "leave" }, "Vacaciones o permiso"), h("li", { class: "undecided" }, "Sin decidir"),
     ),
     selectedDay ? dayPanel(app, selectedDay) : h("p", { class: "muted" }, "Toca un día para ver o cambiar sus fechas."),
+  );
+}
+
+/**
+ * Resumen de días disponibles: vacaciones y permiso del año (natural) del
+ * mes que se está viendo, y días de compensación que ha generado el saldo.
+ */
+function daysPanel(app: App, year: string) {
+  const ctx = app.ctx();
+  const today = app.today();
+  const view = ctx.config.annualView;
+  const key = annualKeyOf(today, view);
+  if (view === "curso" && app.repo && !(key in app.carryovers)) void app.loadCarryover(key).then(() => app.render());
+  const comp = compensationSummary(key, ctx, view === "curso" ? app.carryovers[key] ?? null : null);
+  const vac = leaveUsage("vacaciones_contrato", year, ctx);
+  const per = leaveUsage("permiso_personal", year, ctx);
+  const provisional = (u: { estimatedCourses: string[]; missingCourses: string[] }) =>
+    u.estimatedCourses.length || u.missingCourses.length ? h("span", { class: "muted small", title: "Falta el calendario real de algún periodo del año" }, " (provisional)") : null;
+  const dec = (n: number) => n.toLocaleString("es-ES", { maximumFractionDigits: 1, minimumFractionDigits: 0 }).replace("-", "−");
+
+  return h("section", { class: "days-panel", "aria-labelledby": "t-days" },
+    h("h2", { id: "t-days", class: "sr-only" }, "Tus días"),
+    h("div", { class: "days-card" },
+      h("span", { class: "days-label" }, `Vacaciones ${year}`),
+      h("span", { class: `days-value ${vac.remaining < 0 ? "neg" : ""}` }, `${vac.remaining}`),
+      h("span", { class: "days-sub" }, `quedan de ${vac.allowance}`, provisional(vac)),
+      h("span", { class: "days-sub" }, `${plural(vac.used + vac.prior, "disfrutado", "disfrutados")}, ${plural(vac.planned, "planificado", "planificados")}`),
+    ),
+    h("div", { class: "days-card" },
+      h("span", { class: "days-label" }, `Permiso personal ${year}`),
+      h("span", { class: `days-value ${per.remaining < 0 ? "neg" : ""}` }, `${per.remaining}`),
+      h("span", { class: "days-sub" }, `quedan de ${per.allowance}`, provisional(per)),
+      h("span", { class: "days-sub" }, `${plural(per.used + per.prior, "disfrutado", "disfrutados")}, ${plural(per.planned, "planificado", "planificados")}`),
+    ),
+    h("div", { class: "days-card" },
+      h("span", { class: "days-label" }, "Compensación"),
+      h("span", { class: `days-value ${comp.availableDays < 0 ? "neg" : ""}` }, dec(Math.trunc(comp.availableDays * 10) / 10)),
+      h("span", { class: "days-sub" }, comp.availableDays < 0 ? `días: lo planificado supera tu saldo` : `días de ${dec(comp.dailyHours)} h disponibles`),
+      h("span", { class: "days-sub" },
+        `Saldo ${formatHours(comp.balanceHours, true)}`,
+        comp.carriedIn ? ` (incluye ${formatHours(comp.carriedIn, true)} traídas)` : "",
+        `; ${plural(comp.takenDates.length, "tomado", "tomados")}, ${plural(comp.plannedDates.length, "planificado", "planificados")}`),
+    ),
   );
 }
 
@@ -188,10 +232,13 @@ async function leaveDialog(app: App) {
   const today = app.today();
   const y = Number(today.slice(0, 4));
   const augYear = Number(today.slice(5, 7)) > 8 ? y + 1 : y;
-  const cat = h("select", { id: "l-cat" }, h("option", { value: "vacaciones_contrato" }, "Vacaciones"), h("option", { value: "permiso_personal" }, "Permiso personal"));
+  const cat = h("select", { id: "l-cat" },
+    h("option", { value: "vacaciones_contrato" }, "Vacaciones"),
+    h("option", { value: "permiso_personal" }, "Permiso personal"),
+    h("option", { value: "compensacion" }, "Día de compensación (gasta saldo de horas)"));
   const from = h("input", { type: "date", id: "l-from", value: `${augYear}-08-01` });
   const to = h("input", { type: "date", id: "l-to", value: `${augYear}-08-31` });
-  const ok = await dialog("Planificar vacaciones o permisos", [
+  const ok = await dialog("Planificar vacaciones, permisos o compensación", [
     h("label", { for: "l-cat" }, "Tipo"), cat,
     h("label", { for: "l-from" }, "Desde"), from,
     h("label", { for: "l-to" }, "Hasta"), to,
@@ -210,7 +257,7 @@ async function leaveDialog(app: App) {
   const byCourse = new Map<CourseLabel, string[]>();
   for (const d of chosen) byCourse.set(courseOf(d), [...(byCourse.get(courseOf(d)) ?? []), d]);
   for (const [course, ds] of byCourse) {
-    const plan = planAddLeaveDays(app.calendars.calendar(course), course, ds, cat.value as LeaveCategory, nowUtc());
+    const plan = planAddLeaveDays(app.calendars.calendar(course), course, ds, cat.value as LeaveCategory | "compensacion", nowUtc());
     if (!(await save(app, plan))) return;
   }
   toast(`${plural(chosen.length, "día guardado", "días guardados")}.`);
@@ -225,18 +272,36 @@ async function importDialog(app: App) {
   const text = h("textarea", { id: "i-text", rows: 6, placeholder: "O pega aquí el texto del calendario" });
   const generic = profileOf(app.config.get()) === "generico";
   const course = h("input", { type: "text", id: "i-course", placeholder: "Ej.: 2027 o 2026-27", pattern: "\\d{4}(-\\d{2})?" });
-  const help = generic
-    ? [
-        h("p", { class: "muted small" }, "Puedes subir el PDF de tu calendario laboral o pegar una lista de fechas, una por renglón, como en esta plantilla. Los encabezados indican el tipo de fecha."),
-        h("button", { type: "button", class: "btn", onclick: () => { text.value = GENERIC_TEMPLATE; } }, "Pegar la plantilla de ejemplo"),
-      ]
-    : [h("p", { class: "muted small" }, "Sube el PDF del calendario académico de la UVa. Si subes otro documento, se intentará buscar las fechas de forma general.")];
+  const template = (title: string, body: string, note: string) => h("div", { class: "template" },
+    h("p", { class: "template-title" }, title),
+    h("p", { class: "muted small" }, note),
+    h("pre", { class: "template-text", tabindex: "0" }, body),
+    h("div", { class: "actions" },
+      h("button", { type: "button", class: "btn", onclick: () => { text.value = body; text.focus(); } }, "Usar en el cuadro"),
+      h("button", { type: "button", class: "btn", onclick: async () => {
+        try { await navigator.clipboard.writeText(body); toast("Plantilla copiada."); }
+        catch { toast("No se pudo copiar; selecciona el texto a mano.", "error"); }
+      } }, "Copiar"),
+    ),
+  );
+  const templates = h("details", { class: "templates", open: generic },
+    h("summary", {}, generic ? "Plantillas para escribir tu calendario" : "¿No tienes el PDF? Plantillas para escribirlo"),
+    h("p", { class: "muted small" }, "Copia una plantilla, cambia las fechas y los motivos por los tuyos (en un editor de notas, por ejemplo) y pégala en el cuadro de texto. Indica siempre el año."),
+    template("Lista por tipos", GENERIC_TEMPLATE, "Una fecha o un periodo por renglón. Los encabezados («Festivos…», «Fiestas locales», «Cierres…») indican el tipo de lo que va debajo."),
+    template("Tabla por meses", TABLE_TEMPLATE, "Mes y año, días (uno, varios con «y», o «Del … al …») y motivo. Sirve también para tablas copiadas de una web o de Word."),
+  );
+  const help = [
+    h("p", { class: "muted small" }, generic
+      ? "Sube el PDF de tu calendario laboral o pega el texto. Se buscarán las fechas de forma general y podrás revisarlas antes de guardar."
+      : "Sube el PDF del calendario académico de la UVa. Si subes otro documento o pegas texto, se intentará buscar las fechas de forma general."),
+  ];
   const ok = await dialog(generic ? "Importar calendario laboral" : "Importar calendario académico", [
     ...help,
     h("p", { class: "muted small" }, "El PDF se lee en este dispositivo; no se envía a ningún sitio. Nada se guarda hasta que lo revises y confirmes."),
     h("label", { for: "i-file" }, "PDF del calendario"), file,
     h("label", { for: "i-text" }, "Texto (si el PDF no se reconoce)"), text,
     h("label", { for: "i-course" }, "Año o curso (solo si el texto no lo indica)"), course,
+    templates,
   ], [{ label: "Cancelar", value: "no" }, { label: "Leer fechas", value: "si", kind: "primary" }]);
   if (ok !== "si") return;
   try {

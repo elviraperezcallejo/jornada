@@ -175,3 +175,18 @@ describe("estimación para otros trabajos (por año natural)", () => {
     expect(uva.days.find((x) => x.date === "2028-01-06")?.info.isWorkday).toBe(true);
   });
 });
+
+describe("plantillas visibles en la app", () => {
+  it("la plantilla de tabla se lee completa y sin avisos", async () => {
+    const { TABLE_TEMPLATE } = await import("../src/domain/profile");
+    const r = parseGenericCalendar(TABLE_TEMPLATE);
+    expect(r.warnings).toEqual([]);
+    expect(rows(r.items)).toEqual([
+      ["2026-10-12", null, "nacional_regional", "Fiesta Nacional"],
+      ["2026-12-07", null, "nacional_regional", "Fiestas laborales"],
+      ["2026-12-08", null, "nacional_regional", "Fiestas laborales"],
+      ["2026-12-24", "2026-12-31", "periodo_vacacional", "Cierre de Navidad"],
+      ["2027-05-15", null, "local", "Fiesta local"],
+    ]);
+  });
+});

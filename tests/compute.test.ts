@@ -1,5 +1,6 @@
 import {
   annualSummary,
+  compensationSummary,
   buildCarryover,
   carryoverDrift,
   courseBalance,
@@ -304,5 +305,43 @@ describe("inicio del registro", () => {
   it("sin fichajes ni fecha, empieza hoy", () => {
     const c: CalcContext = { config: base, calendars: { "2026-27": confirmed() }, sessions: [], now: utc("2026-10-16T18:00+02:00") };
     expect(weekSummary("2026-10-16", c).referenceToDate).toBe(7.5);
+  });
+});
+
+describe("días de compensación generados", () => {
+  // Contrato normal; registro desde el 05/10/2026; calendario con festivos confirmados.
+  const cal = confirmed();
+  const sessions = [
+    ...["05", "06", "07", "08", "09"].map((d) => ses(`2026-10-${d}T08:00+02:00`, `2026-10-${d}T19:00+02:00`)), // 11 h al día
+  ];
+  const now = "2026-10-09T20:00+02:00";
+  const cfg = { ...config, trackingStartsOn: "2026-10-05" };
+
+  it("el saldo positivo se traduce en días de 7,5 h", () => {
+    const c = compensationSummary("2026-27", { config: cfg, calendars: { "2026-27": cal }, sessions, now: utc(now) }, null);
+    expect(c.dailyHours).toBe(7.5);
+    expect(c.balanceHours).toBe(17.5); // 55 h trabajadas − 37,5 h
+    expect(c.availableDays).toBeCloseTo(17.5 / 7.5);
+  });
+
+  it("un día de compensación planificado se resta; uno ya disfrutado ya está en el saldo", () => {
+    const p = planAddLeaveDays(cal, "2026-27", ["2026-10-16", "2026-11-06"], "compensacion", T);
+    if (!p.ok) throw new Error(p.errors.join());
+    const withComp = applyCalendarOp(cal, p.op);
+    const at = (n: string) => compensationSummary("2026-27", { config: cfg, calendars: { "2026-27": withComp }, sessions, now: utc(n) }, null);
+    const before = at(now); // los dos son futuros
+    expect(before.plannedDates).toEqual(["2026-10-16", "2026-11-06"]);
+    expect(before.availableHours).toBe(17.5 - 15);
+    // El 16/10 ya pasó: está dentro del saldo (referencia de la semana sin trabajar ese día).
+    const after = at("2026-10-17T10:00+02:00");
+    expect(after.takenDates).toEqual(["2026-10-16"]);
+    expect(after.plannedDates).toEqual(["2026-11-06"]);
+  });
+
+  it("el traslado del curso anterior suma al saldo", () => {
+    const c = compensationSummary("2026-27", { config: cfg, calendars: { "2026-27": cal }, sessions, now: utc(now) },
+      { schemaVersion: 1, course: "2026-27", fromCourse: "2025-26", hours: 7.5, sourceBalanceAtTransfer: 10, createdAt: T, updatedAt: T });
+    expect(c.carriedIn).toBe(7.5);
+    expect(c.balanceHours).toBe(25);
   });
 });

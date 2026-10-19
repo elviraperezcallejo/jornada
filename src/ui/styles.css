@@ -246,3 +246,19 @@ form.block > .btn, form.block > .actions { margin-top: 1rem; }
 .toast-error { background: var(--neg); color: #fff; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ---- Tus días (calendario) ---- */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.days-panel { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+.days-card { display: flex; flex-direction: column; gap: 0.125rem; padding: 0.75rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-s); min-width: 0; }
+.days-label { font-size: 0.8125rem; color: var(--muted); font-weight: 700; }
+.days-value { font-size: 1.75rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.days-sub { font-size: 0.8125rem; color: var(--muted); }
+@media (max-width: 420px) { .days-panel { grid-template-columns: 1fr 1fr; } .days-card:last-child { grid-column: 1 / -1; } }
+
+/* ---- Plantillas en la importación ---- */
+.templates { margin-top: 1rem; border-top: 1px solid var(--line); padding-top: 0.75rem; }
+.templates summary { font-weight: 700; cursor: pointer; min-height: 2.25rem; display: list-item; }
+.template { margin-top: 0.75rem; }
+.template-title { font-weight: 700; margin: 0 0 0.125rem; }
+.template-text { margin: 0.5rem 0; padding: 0.75rem; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-s); font: 0.875rem/1.45 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; white-space: pre; overflow-x: auto; user-select: all; }

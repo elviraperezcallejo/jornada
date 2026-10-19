@@ -272,12 +272,16 @@ export function planDeleteEntry(cal: CalendarFile, id: string, now: UtcDateTime,
   );
 }
 
-/** Marcar como vacaciones o permiso unos días concretos (p. ej. los laborables de agosto). */
+/**
+ * Marcar como vacaciones, permiso o compensación unos días concretos (p. ej.
+ * los laborables de agosto). Vacaciones y permisos quitan la referencia del
+ * día; un día de compensación la mantiene, de modo que gasta saldo de horas.
+ */
 export function planAddLeaveDays(
   cal: CalendarFile | null,
   course: CourseLabel,
   dates: CivilDate[],
-  category: LeaveCategory,
+  category: LeaveCategory | "compensacion",
   now: UtcDateTime,
   name?: string,
 ): CalendarPlan {
@@ -285,8 +289,8 @@ export function planAddLeaveDays(
   const groupId = dates.length > 1 ? newId() : undefined;
   const changed = [...dates].sort().map((date) => ({
     id: newId(), updatedAt: now, date, category, isTransfer: false, name: name?.trim() || undefined,
-    origin: "manual", groupId, isWorkingDay: false, status: "confirmada" as const,
+    origin: "manual", groupId, isWorkingDay: category === "compensacion", status: "confirmada" as const,
   }));
-  const what = category === "vacaciones_contrato" ? "vacaciones" : "permiso personal";
+  const what = category === "vacaciones_contrato" ? "vacaciones" : category === "permiso_personal" ? "permiso personal" : "compensación";
   return finish(cal, course, changed, `Añadir ${what}: ${dates.length} día(s)`);
 }
