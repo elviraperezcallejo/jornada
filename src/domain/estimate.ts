@@ -111,21 +111,34 @@ export function estimateFrom(prev: CalendarFile, course: CourseLabel): CalendarE
  * oficiales, siempre que el curso anterior sí las tenga (y sea real, no
  * otro estimado). Las fechas personales que ya tenga el curso se conservan.
  */
-export function withEstimates(calendars: Calendars, courses: CourseLabel[], enabled = true): Calendars {
+export function withEstimates(calendars: Calendars, courses: CourseLabel[], enabled = true, byYearHalves = false): Calendars {
   if (!enabled) return calendars;
   const out: Calendars = { ...calendars };
   for (const course of courses) {
     const own = calendars[course];
-    if (hasOfficialDates(own)) continue;
     const prev = calendars[previousCourse(course)];
     if (!prev || prev.estimatedFrom || !hasOfficialDates(prev)) continue;
     const { startsOn, endsOn } = courseBounds(course);
+    let estimated: CalendarEntry[];
+    if (!byYearHalves) {
+      // Perfil UVa: el curso se estima entero solo si no tiene ninguna fecha oficial.
+      if (hasOfficialDates(own)) continue;
+      estimated = estimateFrom(prev, course);
+    } else {
+      // Otros trabajos (calendarios por año natural): cada mitad del curso
+      // (sep–dic y ene–ago) se estima por separado si le faltan fechas oficiales.
+      const half = (d: CivilDate) => (Number(d.slice(5, 7)) >= 9 ? 1 : 2);
+      const covered = new Set((own?.entries ?? []).filter(isOfficial).map((e) => half(e.date)));
+      if (covered.size === 2) continue;
+      estimated = estimateFrom(prev, course).filter((e) => !covered.has(half(e.date)));
+      if (!estimated.length) continue;
+    }
     out[course] = {
       schemaVersion: prev.schemaVersion,
       course, startsOn, endsOn,
       sourceName: own?.sourceName,
       estimatedFrom: prev.course,
-      entries: [...(own?.entries ?? []), ...estimateFrom(prev, course)],
+      entries: [...(own?.entries ?? []), ...estimated],
     };
   }
   return out;

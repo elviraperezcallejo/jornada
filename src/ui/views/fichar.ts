@@ -63,7 +63,7 @@ export function ficharView(app: App): HTMLElement {
     week.undecidedDates.length
       ? h("p", { class: "note" }, "Esta semana hay fechas del calendario sin decidir; de momento cuentan como laborables.")
       : null,
-    week.estimatedCourses.length ? h("p", { class: "note" }, "La referencia usa un calendario estimado a partir del curso anterior.") : null,
+    week.estimatedCourses.length ? h("p", { class: "note" }, `La referencia usa un calendario estimado a partir del ${ctx.config.profile === "generico" ? "año" : "curso"} anterior.`) : null,
   );
 }
 

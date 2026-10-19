@@ -245,7 +245,7 @@ function coursesWhere(days: DayResult[], f: (d: DayResult) => boolean): CourseLa
 
 /** Calendarios reales más, si está activado, los estimados para los cursos que falten. */
 export function effectiveCalendars(ctx: CalcContext, from: CivilDate, to: CivilDate): Calendars {
-  return withEstimates(ctx.calendars, coursesCovering(from, to), ctx.config.estimateMissingCalendars);
+  return withEstimates(ctx.calendars, coursesCovering(from, to), ctx.config.estimateMissingCalendars, ctx.config.profile === "generico");
 }
 
 // ---------------------------------------------------------------------------

@@ -115,10 +115,18 @@ export interface CalendarImportSettings {
   centre: string;
 }
 
+/**
+ * Perfil del usuario: miembro de la UVa (por defecto) o de otro trabajo.
+ * Solo cambia textos y la ayuda de importación; los datos son los mismos.
+ */
+export type Profile = "uva" | "generico";
+
 /** config.json */
 export interface ConfigFile {
   schemaVersion: number;
   timezone: typeof TIMEZONE;
+  /** Sin valor = "uva" (ficheros creados antes de existir esta opción). */
+  profile?: Profile;
   contractTerms: ContractTerm[];
   priorLeaveUsage: PriorLeaveUsage[];
   /**

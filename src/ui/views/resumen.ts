@@ -17,6 +17,7 @@ import { annualBounds, annualKeyOf, isCourseLabel, nowUtc, shiftAnnualKey } from
 import { TIMEZONE, type AnnualView, type CourseLabel } from "../../domain/types";
 import { saveCarryover } from "../../storage/carryover";
 import type { App } from "../app";
+import { periodLabel, profileOf } from "../../domain/profile";
 import { dialog, download, h, toast } from "../dom";
 import { tone } from "../format";
 import { dateLong, dateShort, formatHours, formatHoursShort, formatRatio, monthName, plural, weekLabel } from "../format";
@@ -49,7 +50,7 @@ export function resumenView(app: App): HTMLElement {
     breakdown = weeksOf(s).map((w) => ({ label: weekLabel(w.monday), summary: w.summary }));
   } else {
     s = annualSummary(key, ctx);
-    title = view === "curso" ? `Curso ${key}` : `Año ${key}`;
+    title = view === "curso" ? cap(periodLabel(key, profileOf(ctx.config))) : `Año ${key}`;
     breakdown = monthsOf(s).map((m) => ({ label: monthName(m.month), summary: m.summary }));
   }
 
@@ -81,7 +82,7 @@ export function resumenView(app: App): HTMLElement {
               void app.syncNow();
               app.render();
             },
-          }, v === "curso" ? "Curso (sep–ago)" : "Año natural")),
+          }, v === "curso" ? (profileOf(ctx.config) === "uva" ? "Curso (sep–ago)" : "Septiembre a agosto") : "Año natural")),
         )
       : null,
     h("div", { class: "pager" },
@@ -91,7 +92,7 @@ export function resumenView(app: App): HTMLElement {
       h("button", { type: "button", class: "btn", onclick: () => { anchor = null; annualKey = null; app.render(); } }, "Hoy"),
     ),
     metrics(s),
-    warnings(s),
+    warnings(s, profileOf(ctx.config) === "uva"),
     breakdown.length > 1
       ? h("table", { class: "breakdown" },
           h("caption", { class: "muted small" }, "Horas y minutos (h:mm)."),
@@ -129,7 +130,7 @@ function item(label: string, value: string, sub: string | null, cls = "") {
   return h("div", { class: "metric" }, h("dt", {}, label), h("dd", { class: cls }, value), sub ? h("dd", { class: "sub" }, sub) : null);
 }
 
-function warnings(s: PeriodSummary) {
+function warnings(s: PeriodSummary, uva = true) {
   const out: HTMLElement[] = [];
   const firstCounted = s.days.find((d) => !d.beforeTracking);
   if (s.days.some((d) => d.beforeTracking)) {
@@ -139,7 +140,7 @@ function warnings(s: PeriodSummary) {
   }
   if (s.pendingSessions.length) out.push(h("p", { class: "note note-warn" }, `${s.pendingSessions.length} fichaje(s) sin salida no cuentan hasta corregirlos en Historial.`));
   if (s.undecidedDates.length) out.push(h("p", { class: "note" }, `${s.undecidedDates.length} fecha(s) del calendario sin decidir; cuentan como laborables hasta que decidas.`));
-  if (s.estimatedCourses.length) out.push(h("p", { class: "note" }, `Calendario estimado para ${s.estimatedCourses.join(", ")} a partir del curso anterior.`));
+  if (s.estimatedCourses.length) out.push(h("p", { class: "note" }, `Calendario estimado para ${s.estimatedCourses.join(", ")} a partir del ${uva ? "curso" : "año"} anterior.`));
   if (s.missingCourses.length) out.push(h("p", { class: "note note-warn" }, `Sin calendario para ${s.missingCourses.join(", ")}: solo se descuentan fines de semana.`));
   return out;
 }
@@ -171,8 +172,9 @@ function leaveSection(app: App, key: string, view: AnnualView) {
 }
 
 function balanceSection(app: App, course: CourseLabel) {
-  const host = h("section", { class: "block", "aria-labelledby": "t-saldo" }, h("h2", { id: "t-saldo" }, "Saldo del curso"));
   const ctx = app.ctx();
+  const P = (c: CourseLabel) => periodLabel(c, profileOf(ctx.config));
+  const host = h("section", { class: "block", "aria-labelledby": "t-saldo" }, h("h2", { id: "t-saldo" }, `Saldo del ${P(course)}`));
   const next = shiftAnnualKey(course, 1);
   void (async () => {
     const carriedIn = await app.loadCarryover(course);
@@ -180,17 +182,17 @@ function balanceSection(app: App, course: CourseLabel) {
     const bal = courseBalance(course, ctx, carriedIn);
     host.append(
       h("p", {}, `Saldo propio: ${formatHours(bal.ownBalance, true)}.`,
-        bal.carriedIn ? ` Traído del curso ${carriedIn!.fromCourse}: ${formatHours(bal.carriedIn, true)}.` : "",
+        bal.carriedIn ? ` Traído del ${P(carriedIn!.fromCourse)}: ${formatHours(bal.carriedIn, true)}.` : "",
         ` Total: ${formatHours(bal.totalBalance, true)}.`),
     );
     if (outgoing) {
-      host.append(h("p", {}, `Trasladado al curso ${next}: ${formatHours(outgoing.hours, true)} (${dateShort(outgoing.createdAt.slice(0, 10))}).`));
+      host.append(h("p", {}, `Trasladado al ${P(next)}: ${formatHours(outgoing.hours, true)} (${dateShort(outgoing.createdAt.slice(0, 10))}).`));
       const drift = carryoverDrift(outgoing, bal);
       if (drift) host.append(h("p", { class: "note note-warn" },
         `El saldo de este curso ha cambiado desde el traslado (de ${formatHours(drift.before, true)} a ${formatHours(drift.now, true)}). Puedes rehacer el traslado.`));
     }
     if (!bal.finished) {
-      host.append(h("p", { class: "muted" }, "Cuando termine el curso podrás trasladar el saldo al siguiente."));
+      host.append(h("p", { class: "muted" }, `Cuando termine el ${P(course)} podrás trasladar el saldo al siguiente.`));
       return;
     }
     if (!app.repo) return void host.append(h("p", { class: "muted" }, "Conecta con GitHub en Ajustes para trasladar el saldo."));
@@ -199,8 +201,8 @@ function balanceSection(app: App, course: CourseLabel) {
       onclick: async () => {
         const input = h("input", { type: "number", id: "co-hours", step: "0.25", value: String(Math.round(bal.totalBalance * 100) / 100) });
         const note = h("input", { type: "text", id: "co-note", maxlength: 200 });
-        const ok = await dialog(`Trasladar saldo a ${next}`, [
-          h("p", {}, `Saldo total del curso ${course}: ${formatHours(bal.totalBalance, true)}. Puedes trasladarlo entero, una parte o nada (0).`),
+        const ok = await dialog(`Trasladar saldo al ${P(next)}`, [
+          h("p", {}, `Saldo total del ${P(course)}: ${formatHours(bal.totalBalance, true)}. Puedes trasladarlo entero, una parte o nada (0).`),
           h("label", { for: "co-hours" }, "Horas a trasladar"), input,
           h("label", { for: "co-note" }, "Nota (opcional)"), note,
         ], [{ label: "Cancelar", value: "no" }, { label: "Trasladar", value: "si", kind: "primary" }]);
@@ -214,8 +216,10 @@ function balanceSection(app: App, course: CourseLabel) {
           toast((e as Error).message, "error");
         }
       },
-    }, outgoing ? "Rehacer el traslado" : `Trasladar saldo a ${next}`));
+    }, outgoing ? "Rehacer el traslado" : `Trasladar saldo al ${P(next)}`));
   })();
   return host;
 }
 
+
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);

@@ -6,6 +6,15 @@ se publica en GitHub Pages (repositorio público) y los datos se guardan en un
 
 ## Estado: fases (a) a (e) completadas
 
+### Perfil UVa / otro trabajo
+
+- En Ajustes → Perfil: «Soy miembro de la UVa» (por defecto) o «No soy miembro de la UVa».
+- Importación: primero se intenta el lector del calendario de la UVa (sin cambios); si el
+  documento no tiene ese formato, `src/import/parseGenericCalendar.ts` busca fechas con texto
+  en cualquier PDF o texto pegado. La pantalla de importación incluye una plantilla de ejemplo.
+- Con el perfil «otro trabajo» cambian los nombres de categorías y periodos, y la estimación
+  de calendarios que faltan se hace por mitades de año (sep–dic y ene–ago).
+
 ### Fase (e): interfaz para móvil y escritorio
 
 - `src/ui/`: pantallas Fichar, Historial, Resumen, Calendario, Ajustes y Cambios sin aplicar.

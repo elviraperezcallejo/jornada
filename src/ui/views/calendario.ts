@@ -19,8 +19,14 @@ import { loadPdfjs } from "../../import/loadPdfjs";
 import { pdfToText } from "../../import/pdfText";
 import type { ImportDraft } from "../../storage/calendarStore";
 import type { App } from "../app";
+import { categoryLabel, GENERIC_TEMPLATE, periodLabel, profileOf } from "../../domain/profile";
+import { groupByCourse } from "../../import/importFlow";
 import { confirmDanger, dialog, h, toast } from "../dom";
-import { CATEGORY_LABEL, dateLong, dateShort, formatHours, monthName, plural, weekLabel } from "../format";
+import { dateLong, dateShort, formatHours, monthName, plural, weekLabel } from "../format";
+
+/** Nombre de una categoría según el perfil (UVa u otro trabajo). */
+const L = (app: App, c: Category) => categoryLabel(c, profileOf(app.config.get()));
+const P = (app: App, course: CourseLabel) => periodLabel(course, profileOf(app.config.get()));
 
 let month: string | null = null;
 let selectedDay: string | null = null;
@@ -57,7 +63,7 @@ export function calendarioView(app: App): HTMLElement {
       date === today ? "today" : "",
       date === selectedDay ? "selected" : "",
     ].join(" ");
-    const desc = info.leave ? CATEGORY_LABEL[info.leave.category] : info.nonWorking[0]?.name ?? (info.isWorkday ? "laborable" : "no laborable");
+    const desc = info.leave ? L(app, info.leave.category) : info.nonWorking[0]?.name ?? (info.isWorkday ? "laborable" : "no laborable");
     cells.push(h("button", {
       type: "button", class: cls, "aria-label": `${dateLong(date)}: ${desc}${info.undecided.length ? ", sin decidir" : ""}`,
       onclick: () => { selectedDay = date; app.render(); },
@@ -75,8 +81,8 @@ export function calendarioView(app: App): HTMLElement {
       h("h2", { class: "pager-title" }, monthName(ym)),
       h("button", { type: "button", class: "btn", onclick: () => go(1), "aria-label": "Mes siguiente" }, "›"),
     ),
-    estimated ? h("p", { class: "note" }, `El curso ${course} aún no tiene calendario: las fechas en cursiva son una estimación a partir de ${cals[course]!.estimatedFrom}.`) : null,
-    !cals[course] ? h("p", { class: "note note-warn" }, `No hay calendario del curso ${course}. Impórtalo o añade las fechas a mano.`) : null,
+    estimated ? h("p", { class: "note" }, `El ${P(app, course)} aún no tiene calendario: las fechas en cursiva son una estimación a partir del ${P(app, cals[course]!.estimatedFrom!)}.`) : null,
+    !cals[course] ? h("p", { class: "note note-warn" }, `No hay calendario del ${P(app, course)}. Impórtalo o añade las fechas a mano.`) : null,
     h("div", { class: "month", role: "grid" },
       ["L", "M", "X", "J", "V", "S", "D"].map((d) => h("div", { class: "dow", "aria-hidden": "true" }, d)),
       cells,
@@ -104,8 +110,8 @@ function dayPanel(app: App, date: string) {
     entries.length ? h("ul", { class: "entries" }, entries.map((e) => {
       const est = e.id.startsWith("estimado:");
       return h("li", { class: est ? "estimated" : "" },
-        h("strong", {}, e.name ?? CATEGORY_LABEL[e.category]),
-        h("span", { class: "muted small" }, ` ${CATEGORY_LABEL[e.category]}${e.isTransfer ? " (traslado)" : ""}. ${e.origin}.`),
+        h("strong", {}, e.name ?? L(app, e.category)),
+        h("span", { class: "muted small" }, ` ${L(app, e.category)}${e.isTransfer ? " (traslado)" : ""}. ${e.origin}.`),
         h("div", { class: "muted small" }, e.status === "propuesta" || e.isWorkingDay === null ? "Sin decidir" : e.isWorkingDay ? "Laborable" : "No laborable"),
         est || !real ? null : h("div", { class: "row-actions" },
           !["vacaciones_contrato", "permiso_personal", "compensacion"].includes(e.category)
@@ -115,12 +121,12 @@ function dayPanel(app: App, date: string) {
               ]
             : null,
           h("button", { type: "button", class: "btn btn-danger-quiet", onclick: async () => {
-            if (!(await confirmDanger("Eliminar fecha", `Se eliminará «${e.name ?? CATEGORY_LABEL[e.category]}» del ${dateShort(date)}.`, "Eliminar"))) return;
+            if (!(await confirmDanger("Eliminar fecha", `Se eliminará «${e.name ?? L(app, e.category)}» del ${dateShort(date)}.`, "Eliminar"))) return;
             void save(app, planDeleteEntry(real, e.id, nowUtc()));
           } }, "Eliminar"),
           e.groupId ? h("button", { type: "button", class: "btn btn-danger-quiet", onclick: async () => {
             const n = real.entries.filter((x) => x.groupId === e.groupId && !x.deleted).length;
-            if (!(await confirmDanger("Eliminar periodo", `Se eliminarán los ${n} días de «${e.name ?? CATEGORY_LABEL[e.category]}».`, "Eliminar periodo"))) return;
+            if (!(await confirmDanger("Eliminar periodo", `Se eliminarán los ${n} días de «${e.name ?? L(app, e.category)}».`, "Eliminar periodo"))) return;
             void save(app, planDeleteEntry(real, e.id, nowUtc(), true));
           } }, "Eliminar todo el periodo") : null,
         ),
@@ -158,7 +164,7 @@ async function save(app: App, plan: CalendarPlan, askPreview = true): Promise<bo
 
 async function addDialog(app: App, date: string) {
   const cats = CATEGORIES.filter((c) => c !== "academico");
-  const cat = h("select", { id: "a-cat" }, cats.map((c) => h("option", { value: c }, CATEGORY_LABEL[c])));
+  const cat = h("select", { id: "a-cat" }, cats.map((c) => h("option", { value: c }, L(app, c))));
   const name = h("input", { type: "text", id: "a-name", maxlength: 120 });
   const to = h("input", { type: "date", id: "a-to", value: date, min: date });
   const lab = h("select", { id: "a-lab" }, h("option", { value: "no" }, "No laborable"), h("option", { value: "si" }, "Laborable"));
@@ -217,12 +223,20 @@ async function leaveDialog(app: App) {
 async function importDialog(app: App) {
   const file = h("input", { type: "file", id: "i-file", accept: "application/pdf,.pdf" });
   const text = h("textarea", { id: "i-text", rows: 6, placeholder: "O pega aquí el texto del calendario" });
-  const course = h("input", { type: "text", id: "i-course", placeholder: "Ej.: 2026-27", pattern: "\\d{4}-\\d{2}" });
-  const ok = await dialog("Importar calendario académico", [
+  const generic = profileOf(app.config.get()) === "generico";
+  const course = h("input", { type: "text", id: "i-course", placeholder: "Ej.: 2027 o 2026-27", pattern: "\\d{4}(-\\d{2})?" });
+  const help = generic
+    ? [
+        h("p", { class: "muted small" }, "Puedes subir el PDF de tu calendario laboral o pegar una lista de fechas, una por renglón, como en esta plantilla. Los encabezados indican el tipo de fecha."),
+        h("button", { type: "button", class: "btn", onclick: () => { text.value = GENERIC_TEMPLATE; } }, "Pegar la plantilla de ejemplo"),
+      ]
+    : [h("p", { class: "muted small" }, "Sube el PDF del calendario académico de la UVa. Si subes otro documento, se intentará buscar las fechas de forma general.")];
+  const ok = await dialog(generic ? "Importar calendario laboral" : "Importar calendario académico", [
+    ...help,
     h("p", { class: "muted small" }, "El PDF se lee en este dispositivo; no se envía a ningún sitio. Nada se guarda hasta que lo revises y confirmes."),
     h("label", { for: "i-file" }, "PDF del calendario"), file,
     h("label", { for: "i-text" }, "Texto (si el PDF no se reconoce)"), text,
-    h("label", { for: "i-course" }, "Curso (solo si el texto no lo indica)"), course,
+    h("label", { for: "i-course" }, "Año o curso (solo si el texto no lo indica)"), course,
   ], [{ label: "Cancelar", value: "no" }, { label: "Leer fechas", value: "si", kind: "primary" }]);
   if (ok !== "si") return;
   try {
@@ -250,7 +264,9 @@ function reviewView(app: App, d: ImportDraft): HTMLElement {
   const rows = new Map<string, CalendarEntry[]>();
   for (const e of d.entries) rows.set(e.groupId ?? e.id, [...(rows.get(e.groupId ?? e.id) ?? []), e]);
   const decisions = new Map<string, "no" | "si" | "omitir">();
-  for (const [k, es] of rows) decisions.set(k, es[0]!.category === "academico" ? "omitir" : "no");
+  // UVa: como siempre. Genérico: lo que no se sabe qué es se propone sin guardar.
+  const skip = (c: Category) => c === "academico" || (d.parser === "generico" && c === "otro");
+  for (const [k, es] of rows) decisions.set(k, skip(es[0]!.category) ? "omitir" : "no");
 
   const byCat = new Map<Category, [string, CalendarEntry[]][]>();
   for (const [k, es] of rows) byCat.set(es[0]!.category, [...(byCat.get(es[0]!.category) ?? []), [k, es]]);
@@ -264,16 +280,17 @@ function reviewView(app: App, d: ImportDraft): HTMLElement {
   };
 
   return h("section", { class: "view", "aria-labelledby": "t-rev" },
-    h("h1", { id: "t-rev" }, `Revisar calendario ${d.course}`),
-    h("p", { class: "muted" }, `Origen: ${d.sourceName}. Decide para cada fecha si es laborable para ti. Las fechas académicas son solo de referencia.`),
+    h("h1", { id: "t-rev" }, `Revisar calendario ${d.label ?? d.course}`),
+    h("p", { class: "muted" }, `Origen: ${d.sourceName}. Decide para cada fecha si es laborable para ti.`,
+      d.parser === "generico" ? " Lo que no se ha podido clasificar viene marcado como «No guardar»." : " Las fechas académicas son solo de referencia."),
     d.warnings.map((w) => h("p", { class: "note note-warn" }, w)),
     [...byCat.entries()].map(([cat, list]) => h("section", { class: "block" },
-      h("h2", {}, CATEGORY_LABEL[cat]),
+      h("h2", {}, L(app, cat)),
       h("ul", { class: "review" }, list.map(([k, es]) => {
         const item = d.items.find((i) => i.name === es[0]!.name && i.from === es[0]!.date);
-        const when = es.length > 1 ? `${dateShort(es[0]!.date)} – ${dateShort(es.at(-1)!.date)} (${es.length} días)` : dateLong(es[0]!.date);
+        const when = es.length > 1 ? `${dateShort(es[0]!.date)} – ${dateShort(es.at(-1)!.date)} (${es.length} días)` : `${dateLong(es[0]!.date)} de ${es[0]!.date.slice(0, 4)}`;
         return h("li", {},
-          h("strong", {}, es[0]!.name ?? CATEGORY_LABEL[cat]), h("span", {}, ` ${when}${es[0]!.isTransfer ? ", traslado" : ""}`),
+          h("strong", {}, es[0]!.name ?? L(app, cat)), h("span", {}, ` ${when}${es[0]!.isTransfer ? ", traslado" : ""}`),
           item ? h("div", { class: "muted small source" }, `«${item.sourceLine}»`) : null,
           radios(k));
       })),
@@ -287,8 +304,12 @@ function reviewView(app: App, d: ImportDraft): HTMLElement {
         const chosen = [...rows.entries()].filter(([k]) => decisions.get(k) !== "omitir")
           .flatMap(([k, es]) => es.map((entry) => ({ entry, isWorkingDay: decisions.get(k) === "si" })));
         if (!chosen.length) return void toast("No hay fechas para guardar.", "error");
-        const plan = planConfirm(app.calendars.calendar(d.course), d.course, chosen, nowUtc(), `Importar calendario ${d.course}`, d.sourceName);
-        if (!(await save(app, plan))) return;
+        // Cada fecha se guarda en el calendario de su curso (sep–ago); un año natural ocupa dos.
+        for (const [course, group] of groupByCourse(chosen.map((c) => ({ ...c, date: c.entry.date })))) {
+          const plan = planConfirm(app.calendars.calendar(course), course, group.map(({ entry, isWorkingDay }) => ({ entry, isWorkingDay })),
+            nowUtc(), `Importar calendario ${d.label ?? course}`, d.sourceName);
+          if (!(await save(app, plan))) return;
+        }
         draft = null; await app.calendars.clearDraft();
         toast(`${plural(chosen.length, "fecha guardada", "fechas guardadas")}.`);
         app.render();

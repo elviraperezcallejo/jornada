@@ -116,7 +116,7 @@ export function eachDate(from: CivilDate, to: CivilDate): CivilDate[] {
  * (los laborables). P. ej. agosto de 2027 → 22 días si no hay festivos.
  */
 export function leaveCandidateDays(from: CivilDate, to: CivilDate, config: ConfigFile, rawCalendars: Calendars): CivilDate[] {
-  const calendars = withEstimates(rawCalendars, coursesCovering(from, to), config.estimateMissingCalendars);
+  const calendars = withEstimates(rawCalendars, coursesCovering(from, to), config.estimateMissingCalendars, config.profile === "generico");
   const idx = indexByDate(calendars);
   return eachDate(from, to).filter((d) => {
     const info = dayInfo(d, config, calendars, idx);
@@ -139,8 +139,9 @@ export function laborabilityChanges(config: ConfigFile, rawBefore: Calendars, ra
   // Se compara con lo que la app usaba antes (incluida una estimación), para
   // que al importar el calendario real se vea qué semanas cambian.
   const courses = [...new Set(dates.map(courseOf))];
-  const before = withEstimates(rawBefore, courses, config.estimateMissingCalendars);
-  const after = withEstimates(rawAfter, courses, config.estimateMissingCalendars);
+  const halves = config.profile === "generico";
+  const before = withEstimates(rawBefore, courses, config.estimateMissingCalendars, halves);
+  const after = withEstimates(rawAfter, courses, config.estimateMissingCalendars, halves);
   const ib = indexByDate(before);
   const ia = indexByDate(after);
   return dates

@@ -38,7 +38,12 @@ export interface CalendarConflict {
 
 /** Importación en revisión: se guarda solo en el dispositivo hasta confirmarla. */
 export interface ImportDraft {
+  /** Curso principal (el de la primera fecha). Las fechas se guardan cada una en su curso. */
   course: CourseLabel;
+  /** Qué lector se usó: el del calendario de la UVa o el genérico. Sin valor = UVa (borradores antiguos). */
+  parser?: "uva" | "generico";
+  /** Periodo para mostrar: "2026-27" o "2027". */
+  label?: string;
   sourceName: string;
   items: ProposedItem[];
   /** Fechas propuestas (una por día, ids estables) que se revisan en la vista mensual. */

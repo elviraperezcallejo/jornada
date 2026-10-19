@@ -177,6 +177,7 @@ export function validateConfigFile(f: unknown): ValidationErrors {
     errs.push('annualView debe ser "curso" o "anio_natural".');
   }
 
+  if (f.profile !== undefined && f.profile !== "uva" && f.profile !== "generico") errs.push('profile debe ser "uva" o "generico".');
   if (f.trackingStartsOn !== null && !isCivilDate(f.trackingStartsOn)) errs.push("trackingStartsOn debe ser una fecha o null.");
   if (typeof f.estimateMissingCalendars !== "boolean") errs.push("estimateMissingCalendars debe ser booleano.");
 

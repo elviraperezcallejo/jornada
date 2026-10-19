@@ -20,6 +20,21 @@ export function ajustesView(app: App): HTMLElement {
     app.render();
   }
 
+  // ----- Perfil -----
+  const isUva = (cfg.profile ?? "uva") === "uva";
+  const profileBlock = h("section", { class: "block", "aria-labelledby": "t-prof" },
+    h("h2", { id: "t-prof" }, "Perfil"),
+    h("div", { class: "choice", role: "radiogroup", "aria-labelledby": "t-prof" },
+      h("label", {}, h("input", { type: "radio", name: "profile", value: "uva", checked: isUva,
+        onchange: () => change((c) => ({ ...c, profile: "uva" }), "Perfil: miembro de la UVa.") }), "Soy miembro de la UVa"),
+      h("label", {}, h("input", { type: "radio", name: "profile", value: "generico", checked: !isUva,
+        onchange: () => change((c) => ({ ...c, profile: "generico" }), "Perfil: otro trabajo.") }), "No soy miembro de la UVa"),
+    ),
+    h("p", { class: "muted small" }, isUva
+      ? "Se importa el calendario académico de la UVa y se usan sus fiestas de campus y de centro."
+      : "Podrás importar tu calendario laboral (PDF o texto) o añadir festivos y cierres a mano. Revisa también tu contrato y tus cupos de vacaciones."),
+  );
+
   // ----- Conexión -----
   const owner = h("input", { type: "text", id: "c-owner", value: c?.owner ?? "", autocomplete: "username", required: true });
   const repo = h("input", { type: "text", id: "c-repo", value: c?.repo ?? "datos-jornada", required: true });
@@ -133,9 +148,11 @@ export function ajustesView(app: App): HTMLElement {
     h("h2", { id: "t-g" }, "Registro, calendario y exportación"),
     h("label", { for: "g-track" }, "Empecé a registrar el (vacío: el día del primer fichaje)"), track,
     h("p", { class: "muted small" }, "Los días anteriores no cuentan, para que empezar a mitad de curso no aparezca como déficit."),
-    h("label", { for: "g-campus" }, "Campus (fiestas locales)"), campus,
-    h("label", { for: "g-centre" }, "Centro (tal y como aparece en el anexo del PDF)"), centre,
-    h("label", { class: "check" }, est, "Si falta el calendario de un curso, estimarlo a partir del anterior"),
+    isUva ? [
+      h("label", { for: "g-campus" }, "Campus (fiestas locales)"), campus,
+      h("label", { for: "g-centre" }, "Centro (tal y como aparece en el anexo del PDF)"), centre,
+    ] : null,
+    h("label", { class: "check" }, est, isUva ? "Si falta el calendario de un curso, estimarlo a partir del anterior" : "Si falta el calendario de un año, estimarlo a partir del anterior"),
     h("label", { for: "g-sep" }, "Separador de los CSV"), sep,
     h("label", { class: "check" }, dec, "Coma decimal en los CSV"),
     h("button", { type: "submit", class: "btn btn-primary" }, "Guardar"),
@@ -155,6 +172,6 @@ export function ajustesView(app: App): HTMLElement {
 
   return h("section", { class: "view", "aria-labelledby": "t-aj" },
     h("h1", { id: "t-aj" }, "Ajustes"),
-    connection, contract, prior, general, exportBlock,
+    profileBlock, connection, contract, prior, general, exportBlock,
   );
 }
